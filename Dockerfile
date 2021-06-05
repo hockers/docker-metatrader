@@ -15,17 +15,34 @@
 # Base docker image.
 FROM ubuntu:groovy
 
-ADD https://dl.winehq.org/wine-builds/winehq.key /Release.key
+# RUN apt-get update && \
+	# apt-get install -y gnupg apt-utils x11vnc xvfb && \
+	# echo "deb http://dl.winehq.org/wine-builds/ubuntu/ groovy main" >> /etc/apt/sources.list && \
+	# apt-key add Release.key && \
+	# dpkg --add-architecture i386 && \
+	# apt-get update && \
+	# apt-get install -y --install-recommends winehq-stable && \
+	# rm -rf /var/lib/apt/lists/* /Release.key
+# Update packages 
+RUN apt-get update && \
+	apt-get install -y apt-utils gnupg wget x11vnc xvfb
 
 # Install Wine
-RUN apt-get update && \
-	apt-get install -y gnupg apt-utils && \
-	echo "deb http://dl.winehq.org/wine-builds/ubuntu/ groovy main" >> /etc/apt/sources.list && \
+ADD https://dl.winehq.org/wine-builds/winehq.key /Release.key
+RUN echo "deb http://dl.winehq.org/wine-builds/ubuntu/ groovy main" >> /etc/apt/sources.list && \
 	apt-key add Release.key && \
 	dpkg --add-architecture i386 && \
 	apt-get update && \
-	apt-get install -y --install-recommends winehq-devel \
-	&& rm -rf /var/lib/apt/lists/* /Release.key
+	# apt-get install -y --install-recommends winehq-devel && \
+	apt-get install -y --install-recommends winehq-stable && \
+	rm -rf /var/lib/apt/lists/* /Release.key
+
+
+RUN set -ex; \
+    wget https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks; \
+    chmod +x winetricks; \
+    mv winetricks /usr/local/bin
+ADD waitonprocess.sh /usr/local/bin
 
 # Add wine user.
 # NOTE: You might need to change the UID/GID so the
@@ -34,11 +51,25 @@ RUN apt-get update && \
 RUN groupadd -g 1000 wine \
 	&& useradd -g wine -u 1000 wine \
 	&& mkdir -p /home/wine/.wine && chown -R wine:wine /home/wine
+RUN getent passwd
 
 # Run MetaTrader as non privileged user.
 USER wine
+ENV DISPLAY=:0 \
+    SCREEN_NUM=0 \
+    SCREEN_WHD=1366x768x24
 
-# Autorun MetaTrader Terminal.
-ENTRYPOINT [ "wine" ]
-CMD [ "/MetaTrader/terminal64.exe", "/portable" ]
+# Install .NET
+RUN set -ex; \
+    wine wineboot --init; \
+    waitonprocess.sh wineserver; \
+    winetricks --unattended dotnet40; \
+    waitonprocess.sh wineserver
 
+# Add run script
+ADD run.sh /tmp
+EXPOSE 5900
+
+# Run Terminal
+ENTRYPOINT ["/bin/bash"]
+CMD ["/tmp/run.sh"]
